@@ -112,6 +112,7 @@ typedef struct {
 ///
 /// I2C read operation when set
 #define I2C_FLAG_READ               0x00000001
+#define I2C_FLAG_NORESTART          0x00000002
 
 ///
 /// Define the flags for SMBus operation
