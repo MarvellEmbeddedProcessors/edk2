@@ -7,7 +7,7 @@ usage()
 	printf "\n";
 	printf "Mandatory parameters:\n";
 	printf "\t-b\tTarget type. Accepts:\tDEBUG,RELEASE\n";
-	printf "\t-p\tPlatform name. Accepts:\tArmada7040\n";
+	printf "\t-p\tPlatform name. Accepts:\tArmada7040_rz, Apn806\n";
 
 	printf "Optional parameters:\n";
 	printf "\t-c\tClean build. remove all build artifacts)\n";
@@ -73,13 +73,14 @@ boot_file=0
 bin_ext_file=0
 # Locate the DSC file
 case $platform in
-	Armada7040)
+	Apn806);&
+	Armada7040_rz)
 	plat_dir="OpenPlatformPkg/Platforms/Marvell/Armada7040/"
-	dsc_file="$plat_dir/Armada7040.dsc"
-	bin_ext_file="$plat_dir/Binary/u-boot-spl.bin"
-	output_dir="Build/Armada7040/${target}_$toolchain/FV"
-	bin_file="${output_dir}/ARMADA7040_EFI.bin"
-	boot_file="${output_dir}/ARMADA7040_EFI.img"
+	dsc_file="$plat_dir/${platform}.dsc"
+	bin_ext_file="$plat_dir/Binary/${platform}-spl.bin"
+	output_dir="Build/${platform}/${target}_$toolchain/FV"
+	bin_file="${output_dir}/${platform}_EFI.bin"
+	boot_file="${output_dir}/${platform}_EFI.img"
 	;;
 	*)
 	printf "\n *** Error: Unknown platform \"$platform\"\n"
