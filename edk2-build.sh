@@ -69,7 +69,6 @@ fi
 dsc_file=0
 output_dir=0
 bin_file=0
-boot_file=0
 bin_ext_file=0
 # Locate the DSC file
 case $platform in
@@ -80,7 +79,6 @@ case $platform in
 	bin_ext_file="$plat_dir/Binary/${platform}-spl.bin"
 	output_dir="Build/${platform}/${target}_$toolchain/FV"
 	bin_file="${output_dir}/${platform}_EFI.bin"
-	boot_file="${output_dir}/${platform}_EFI.img"
 	;;
 	*)
 	printf "\n *** Error: Unknown platform \"$platform\"\n"
@@ -122,17 +120,10 @@ fi
 
 printf "\n##### [Building Output files ]\t#####\n\n";
 rm -rf $bin_file
-cat $output_dir/ARMADA7040_EFI_SEC.fd $output_dir/ARMADA7040_EFI.fd > $bin_file
+mv $output_dir/ARMADA7040_EFI.fd $bin_file
 if [ $? -ne 0 ]; then
 	printf "**** Error: Failed creating binary file\n"
 	exit 1
 fi
 printf "Binary image:\t$bin_file\n";
-
-OpenPlatformPkg/Platforms/Marvell/Tools/doimage -b $bin_ext_file $bin_file $boot_file
-if [ $? -ne 0 ]; then
-	printf "**** Error: Failed creating boot image\n"
-	exit 1
-fi
-printf "Boot image:\t$boot_file\n";
 
