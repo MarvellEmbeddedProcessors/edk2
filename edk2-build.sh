@@ -3,17 +3,18 @@
 usage()
 {
 	printf "\nUsage: edk2-build.sh -b <target> -p <platform>\n";
-	printf "Example: ./edk2-build.sh -b DEBUG -p Armada7040\n";
+	printf "Example: ./edk2-build.sh -b DEBUG -p Armada7040 -t GCC48\n";
 	printf "\n";
 	printf "Mandatory parameters:\n";
 	printf "\t-b\tTarget type. Accepts:\tDEBUG,RELEASE\n";
 	printf "\t-p\tPlatform name. Accepts:\tArmada7040_rz, Apn806\n";
+	printf "\t-t\tToolchain version. Accepts:\tGCC45, GCC46 ... GCC49\n";
 
 	printf "Optional parameters:\n";
 	printf "\t-c\tClean build. remove all build artifacts)\n";
 	printf "\n";
 	printf "Environment Variables:\n";
-	printf "\tGCC48_AARCH64_PREFIX     Cross compiler to build EDK2\n";
+	printf "\t<GCCver>_AARCH64_PREFIX     Cross compiler to build EDK2\n";
 	printf "\n";
 	exit 1;
 }
@@ -21,7 +22,7 @@ usage()
 target=0
 platform=0
 clean=NO
-toolchain=GCC48
+toolchain=0
 
 # read all input arguments
 while [[ $# > 0 ]]
@@ -31,6 +32,10 @@ key="$1"
 case $key in
 	-p|--platform)
 	platform="$2"
+	shift # past argument
+	;;
+	-t|--toolchain)
+	toolchain="$2"
 	shift # past argument
 	;;
 	-b|--target)
@@ -61,8 +66,26 @@ if [ "$target" -eq 0 ]; then
 	usage
 fi
 
-if [ -z "$GCC48_AARCH64_PREFIX" ]; then
-	printf " *** Error: Please set environment variables GCC48_AARCH64_PREFIX\n";
+if [ "$toolchain" -eq 0 ]; then
+	printf "\n *** Error: Please set toolchain version (GCC45 - GCC49)\n"
+	usage
+fi
+
+case $toolchain in
+	GCC45);&
+	GCC46);&
+	GCC47);&
+	GCC48);&
+	GCC49);;
+	*)
+	printf "\n *** Error: Unsupported toolchain \"$toolchain\"\n"
+	usage
+	;;
+esac
+toolchain_env="${toolchain}_AARCH64_PREFIX"
+
+if [ -z "${!toolchain_env}" ]; then
+	printf " *** Error: Please set environment variable ${toolchain_env}\n";
 	usage
 fi
 
@@ -74,7 +97,7 @@ bin_ext_file=0
 case $platform in
 	Apn806);&
 	Armada7040_rz)
-	plat_dir="OpenPlatformPkg/Platforms/Marvell/Armada7040/"
+	plat_dir="OpenPlatformPkg/Platforms/Marvell/Armada/"
 	dsc_file="$plat_dir/${platform}.dsc"
 	bin_ext_file="$plat_dir/Binary/${platform}-spl.bin"
 	output_dir="Build/${platform}/${target}_$toolchain/FV"
@@ -91,7 +114,7 @@ printf "\n##### [Setting up Environment]\t#####\n\n";
 printf "Platform	= ${platform}\n"
 printf "Target		= ${target}\n"
 printf "Clean build	= ${clean}\n"
-printf "Compiler	= ${GCC48_AARCH64_PREFIX}\n"
+printf "Compiler	= ${toolchain_env}\n"
 
 source edksetup.sh
 if [ $? -ne 0 ]; then
