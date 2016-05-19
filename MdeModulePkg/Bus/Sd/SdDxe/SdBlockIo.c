@@ -592,6 +592,7 @@ SdReadWrite (
   UINTN                                 Remaining;
   UINT32                                MaxBlock;
   BOOLEAN                               LastRw;
+  UINTN Iterator;
 
   Status = EFI_SUCCESS;
   Media  = &Device->BlockMedia;
@@ -657,13 +658,14 @@ SdReadWrite (
     if (BlockNum == 1) {
       Status = SdRwSingleBlock (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
     } else {
-      Status = SdRwMultiBlocks (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
+      for(Iterator = 0; Iterator < BlockNum ; Iterator++, Lba++, Buffer += BlockSize)
+      Status = SdRwSingleBlock (Device, Lba, Buffer, BlockSize, IsRead, Token, LastRw);
     }
     if (EFI_ERROR (Status)) {
       return Status;
     }
-    DEBUG ((EFI_D_INFO, "Sd%a(): Lba 0x%x BlkNo 0x%x Event %p with %r\n", IsRead ? "Read" : "Write", Lba, BlockNum, Token->Event, Status));
 
+    DEBUG ((EFI_D_INFO, "Sd%a(): Lba 0x%x BlkNo 0x%x Event %p with %r\n", IsRead ? "Read" : "Write", Lba, BlockNum, Token->Event, Status));
     Lba   += BlockNum;
     Buffer = (UINT8*)Buffer + BufferSize;
     Remaining -= BlockNum;
@@ -895,7 +897,7 @@ SdReadBlocksEx (
 
   Device = SD_DEVICE_DATA_FROM_BLKIO2 (This);
 
-  Status = SdReadWrite (Device, MediaId, Lba, Buffer, BufferSize, TRUE, Token);
+  Status = SdReadWrite (Device, MediaId, Lba, Buffer, BufferSize, TRUE, NULL);
   return Status;
 }
 
