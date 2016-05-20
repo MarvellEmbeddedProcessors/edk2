@@ -453,7 +453,7 @@ SdRwMultiBlocks (
   )
 {
   EFI_STATUS                    Status;
-  SD_REQUEST                    *RwMultiBlkReq;
+  SD_REQUEST                    *RwMultiBlkReq, *StopBlkReq = NULL;
   EFI_SD_MMC_PASS_THRU_PROTOCOL *PassThru;
   EFI_TPL                       OldTpl;
 
@@ -467,12 +467,20 @@ SdRwMultiBlocks (
     goto Error;
   }
 
+  StopBlkReq = AllocateZeroPool (sizeof (SD_REQUEST));
+  if (StopBlkReq == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Error;
+  }
+
   RwMultiBlkReq->Signature = SD_REQUEST_SIGNATURE;
   OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
   InsertTailList (&Device->Queue, &RwMultiBlkReq->Link);
   gBS->RestoreTPL (OldTpl);
   RwMultiBlkReq->Packet.SdMmcCmdBlk    = &RwMultiBlkReq->SdMmcCmdBlk;
   RwMultiBlkReq->Packet.SdMmcStatusBlk = &RwMultiBlkReq->SdMmcStatusBlk;
+  StopBlkReq->Packet.SdMmcCmdBlk    = &StopBlkReq->SdMmcCmdBlk;
+  StopBlkReq->Packet.SdMmcStatusBlk = &StopBlkReq->SdMmcStatusBlk;
   //
   // Calculate timeout value through the below formula.
   // Timeout = (transfer size) / (2MB/s).
@@ -523,6 +531,18 @@ SdRwMultiBlocks (
   }
 
   Status = PassThru->PassThru (PassThru, Device->Slot, &RwMultiBlkReq->Packet, RwMultiBlkReq->Event);
+  if (EFI_ERROR(Status)) {
+    goto Error;
+  }
+
+  // Send STOP_TRANSMISSION command for multi block transfers
+  StopBlkReq->SdMmcCmdBlk.CommandIndex = SD_STOP_TRANSMISSION;
+  StopBlkReq->SdMmcCmdBlk.CommandType  = SdMmcCommandTypeAc;
+  StopBlkReq->SdMmcCmdBlk.ResponseType = SdMmcResponseTypeR1b;
+  StopBlkReq->SdMmcCmdBlk.CommandArgument = 0;
+
+  Status = PassThru->PassThru (PassThru, Device->Slot, &StopBlkReq->Packet,
+    NULL);
 
 Error:
   if ((Token != NULL) && (Token->Event != NULL)) {
@@ -536,6 +556,7 @@ Error:
         gBS->CloseEvent (RwMultiBlkReq->Event);
       }
       FreePool (RwMultiBlkReq);
+      FreePool (StopBlkReq);
     }
   } else {
     //
@@ -544,6 +565,9 @@ Error:
     if (RwMultiBlkReq != NULL) {
       RemoveEntryList (&RwMultiBlkReq->Link);
       FreePool (RwMultiBlkReq);
+    }
+    if (StopBlkReq != NULL) {
+      FreePool (StopBlkReq);
     }
   }
 
