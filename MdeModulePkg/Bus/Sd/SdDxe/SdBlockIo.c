@@ -296,6 +296,46 @@ SdGetCid (
 }
 
 /**
+  Send command SD_STOP_TRANSMISSION to stop multiple block transfer.
+
+  @param[in]  Device            A pointer to the SD_DEVICE instance.
+
+  @retval EFI_SUCCESS           The request is executed successfully.
+  @retval Others                The request could not be executed successfully.
+
+**/
+EFI_STATUS
+SdSendStopTransmission (
+  IN     SD_DEVICE              *Device
+  )
+{
+  EFI_STATUS                           Status;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL        *PassThru;
+  EFI_SD_MMC_COMMAND_BLOCK             SdMmcCmdBlk;
+  EFI_SD_MMC_STATUS_BLOCK              SdMmcStatusBlk;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+
+  PassThru = Device->Private->PassThru;
+
+  ZeroMem (&SdMmcCmdBlk, sizeof (SdMmcCmdBlk));
+  ZeroMem (&SdMmcStatusBlk, sizeof (SdMmcStatusBlk));
+  ZeroMem (&Packet, sizeof (Packet));
+
+  Packet.SdMmcCmdBlk    = &SdMmcCmdBlk;
+  Packet.SdMmcStatusBlk = &SdMmcStatusBlk;
+  Packet.Timeout        = SD_GENERIC_TIMEOUT;
+
+  SdMmcCmdBlk.CommandIndex = SD_STOP_TRANSMISSION;
+  SdMmcCmdBlk.CommandType  = SdMmcCommandTypeAc;
+  SdMmcCmdBlk.ResponseType = SdMmcResponseTypeR1b;
+  SdMmcCmdBlk.CommandArgument = 0;
+
+  Status = PassThru->PassThru (PassThru, Device->Slot, &Packet, NULL);
+
+  return Status;
+}
+
+/**
   Read/write single block through sync or async I/O request.
 
   @param[in]  Device            A pointer to the SD_DEVICE instance.
@@ -527,6 +567,14 @@ SdRwMultiBlocks (
   }
 
   Status = PassThru->PassThru (PassThru, Device->Slot, &RwMultiBlkReq->Packet, RwMultiBlkReq->Event);
+  if (EFI_ERROR(Status)) {
+    goto Error;
+  }
+
+  // Send STOP_TRANSMISSION command for multi block transfers
+  if (FeaturePcdGet(PcdSdForcePioMode)) {
+    Status = SdSendStopTransmission (Device);
+  }
 
 Error:
   if ((Token != NULL) && (Token->Event != NULL)) {
