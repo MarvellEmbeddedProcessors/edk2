@@ -189,6 +189,36 @@ SdSendStatus (
   return Status;
 }
 
+EFI_STATUS
+SdSetBlockLen (
+  IN     SD_DEVICE              *Device,
+  IN     UINTN Length
+  )
+{
+  EFI_STATUS                           Status;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL        *PassThru;
+  EFI_SD_MMC_COMMAND_BLOCK             SdMmcCmdBlk;
+  EFI_SD_MMC_STATUS_BLOCK              SdMmcStatusBlk;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+
+  PassThru = Device->Private->PassThru;
+
+  ZeroMem (&SdMmcCmdBlk, sizeof (SdMmcCmdBlk));
+  ZeroMem (&SdMmcStatusBlk, sizeof (SdMmcStatusBlk));
+  ZeroMem (&Packet, sizeof (Packet));
+  Packet.SdMmcCmdBlk    = &SdMmcCmdBlk;
+  Packet.SdMmcStatusBlk = &SdMmcStatusBlk;
+  Packet.Timeout        = SD_GENERIC_TIMEOUT;
+
+  SdMmcCmdBlk.CommandIndex = SD_SET_BLOCKLEN;
+  SdMmcCmdBlk.CommandType  = SdMmcCommandTypeAc;
+  SdMmcCmdBlk.ResponseType = SdMmcResponseTypeR1;
+  SdMmcCmdBlk.CommandArgument = Length;
+
+  Status = PassThru->PassThru (PassThru, Device->Slot, &Packet, NULL);
+
+  return Status;
+}
 /**
   Send command SEND_CSD to the device to get the CSD register data.
 
@@ -764,6 +794,9 @@ SdReadWrite (
     if (BlockNum == 1) {
       Status = SdRwSingleBlock (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
     } else {
+      if (FeaturePcdGet(PcdSdForcePioMode)) {
+        SdSetBlockLen (Device, 0x200);
+      }
       Status = SdRwMultiBlocks (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
     }
     if (EFI_ERROR (Status)) {
