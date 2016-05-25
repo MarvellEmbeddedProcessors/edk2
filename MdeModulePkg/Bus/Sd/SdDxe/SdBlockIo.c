@@ -189,6 +189,36 @@ SdSendStatus (
   return Status;
 }
 
+EFI_STATUS
+SdSetBlockLen (
+  IN     SD_DEVICE              *Device,
+  IN     UINTN Length
+  )
+{
+  EFI_STATUS                           Status;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL        *PassThru;
+  EFI_SD_MMC_COMMAND_BLOCK             SdMmcCmdBlk;
+  EFI_SD_MMC_STATUS_BLOCK              SdMmcStatusBlk;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+
+  PassThru = Device->Private->PassThru;
+
+  ZeroMem (&SdMmcCmdBlk, sizeof (SdMmcCmdBlk));
+  ZeroMem (&SdMmcStatusBlk, sizeof (SdMmcStatusBlk));
+  ZeroMem (&Packet, sizeof (Packet));
+  Packet.SdMmcCmdBlk    = &SdMmcCmdBlk;
+  Packet.SdMmcStatusBlk = &SdMmcStatusBlk;
+  Packet.Timeout        = SD_GENERIC_TIMEOUT;
+
+  SdMmcCmdBlk.CommandIndex = SD_SET_BLOCKLEN;
+  SdMmcCmdBlk.CommandType  = SdMmcCommandTypeAc;
+  SdMmcCmdBlk.ResponseType = SdMmcResponseTypeR1;
+  SdMmcCmdBlk.CommandArgument = Length;
+
+  Status = PassThru->PassThru (PassThru, Device->Slot, &Packet, NULL);
+
+  return Status;
+}
 /**
   Send command SEND_CSD to the device to get the CSD register data.
 
@@ -656,7 +686,6 @@ SdReadWrite (
   UINTN                                 Remaining;
   UINT32                                MaxBlock;
   BOOLEAN                               LastRw;
-  UINTN Iterator;
 
   Status = EFI_SUCCESS;
   Media  = &Device->BlockMedia;
@@ -708,7 +737,7 @@ SdReadWrite (
   // Start to execute data transfer. The max block number in single cmd is 65535 blocks.
   //
   Remaining = BlockNum;
-  MaxBlock  = 0xFFFF;
+  MaxBlock  = 2020;
 
   while (Remaining > 0) {
     if (Remaining <= MaxBlock) {
@@ -722,8 +751,8 @@ SdReadWrite (
     if (BlockNum == 1) {
       Status = SdRwSingleBlock (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
     } else {
-      for(Iterator = 0; Iterator < BlockNum ; Iterator++, Lba++, Buffer += BlockSize)
-      Status = SdRwSingleBlock (Device, Lba, Buffer, BlockSize, IsRead, Token, LastRw);
+      SdSetBlockLen (Device, 0x200);
+      Status = SdRwMultiBlocks (Device, Lba, Buffer, BufferSize, IsRead, Token, LastRw);
     }
     if (EFI_ERROR (Status)) {
       return Status;
@@ -1012,7 +1041,7 @@ SdWriteBlocksEx (
 
   Device = SD_DEVICE_DATA_FROM_BLKIO2 (This);
 
-  Status = SdReadWrite (Device, MediaId, Lba, Buffer, BufferSize, FALSE, Token);
+  Status = SdReadWrite (Device, MediaId, Lba, Buffer, BufferSize, FALSE, NULL);
   return Status;
 }
 
