@@ -11,6 +11,7 @@
   WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 
 **/
+#include <Library/TimerLib.h>
 
 #include "SdMmcPciHcDxe.h"
 
@@ -50,6 +51,8 @@ EmmcReset (
   SdMmcCmdBlk.CommandType  = SdMmcCommandTypeBc;
   SdMmcCmdBlk.ResponseType = 0;
   SdMmcCmdBlk.CommandArgument = 0;
+
+  gBS->Stall (1000);
 
   Status = SdMmcPassThruPassThru (PassThru, Slot, &Packet, NULL);
 
