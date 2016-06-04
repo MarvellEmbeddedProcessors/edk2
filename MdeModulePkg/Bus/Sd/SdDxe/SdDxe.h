@@ -114,6 +114,7 @@ struct _SD_DEVICE {
   // The delimiters of these fields are whitespace.
   //
   CHAR16                                ModelName[SD_MODEL_NAME_MAX_LEN];
+  CHAR16                                Rca;
   SD_DRIVER_PRIVATE_DATA                *Private;
 } ;
 
