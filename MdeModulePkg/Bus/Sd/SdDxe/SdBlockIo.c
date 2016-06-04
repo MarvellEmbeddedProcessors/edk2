@@ -422,6 +422,46 @@ Error:
   return Status;
 }
 
+STATIC
+EFI_STATUS
+IsReady (
+  SD_DEVICE *Device,
+  UINT16 Rca,
+  UINTN Timeout
+  )
+{
+  EFI_STATUS Status;
+  UINT32 DevStatus;
+
+  do {
+    Status = SdSendStatus (Device, Rca, &DevStatus);
+    if (EFI_ERROR (Status)) {
+      DEBUG((DEBUG_INFO, "SD: Cannot read Status\n"));
+      return Status;
+    }
+    // Check device status
+    if ((DevStatus & (1 << 8)) && (DevStatus & (0xf << 9)) != (7 << 9))
+      break;
+    else if (DevStatus & ~0x0206BF7F) {
+      DEBUG((DEBUG_ERROR, "SD: Status Error\n"));
+      return EFI_DEVICE_ERROR;
+    }
+
+    gBS->Stall (1000);
+  } while (Timeout--);
+
+  if (Timeout <= 0) {
+    DEBUG((DEBUG_ERROR, "SD: Status timeout\n"));
+    return EFI_TIMEOUT;
+  }
+
+  if (DevStatus & (1 << 7)) {
+    DEBUG((DEBUG_ERROR, "SD: Switch error\n"));
+    return EFI_DEVICE_ERROR;
+  }
+
+  return EFI_SUCCESS;
+}
 /**
   Read/write multiple blocks through sync or async I/O request.
 
@@ -687,6 +727,15 @@ SdReadWrite (
     }
     if (EFI_ERROR (Status)) {
       return Status;
+    }
+
+    if (!IsRead) {
+      // Poll for device status to check if it's ready for next transaction
+      if (IsReady (Device, Device->Rca, 1000) == EFI_SUCCESS) {
+        Status = EFI_SUCCESS;
+      }
+      else
+        Status = EFI_DEVICE_ERROR;
     }
 
     DEBUG ((EFI_D_INFO, "Sd%a(): Lba 0x%x BlkNo 0x%x Event %p with %r\n", IsRead ? "Read" : "Write", Lba, BlockNum, Token->Event, Status));

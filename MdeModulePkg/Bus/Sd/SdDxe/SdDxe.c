@@ -78,6 +78,7 @@ SD_DEVICE mSdDeviceTemplate = {
   {                            // ModelName
     0,
   },
+  0,                           // Relative Card Address
   NULL                         // Private
 };
 
@@ -218,6 +219,8 @@ DiscoverUserArea (
     DEBUG ((EFI_D_ERROR, "DiscoverUserArea(): Reselect the device 0x%x fails with %r\n", Rca, Status));
     return Status;
   }
+
+  Device->Rca = Rca;
 
   Status = SdSendStatus (Device, Rca, &DevStatus);
   if (EFI_ERROR (Status)) {
