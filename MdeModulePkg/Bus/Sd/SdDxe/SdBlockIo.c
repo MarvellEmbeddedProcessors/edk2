@@ -336,6 +336,57 @@ SdSendStopTransmission (
 }
 
 /**
+  Check if card is ready for next data transfer by reading its status.
+
+  @param[in]  Device            A pointer to the SD_DEVICE instance.
+
+  @retval EFI_SUCCESS           Card is ready for next data transfer.
+  @retval EFI_DEVICE_ERROR      Card status is erroneous.
+  @retval EFI_TIMEOUT           Card is busy.
+
+**/
+STATIC
+EFI_STATUS
+SdIsReady (
+  SD_DEVICE *Device,
+  UINT16 Rca,
+  UINTN Timeout
+  )
+{
+  EFI_STATUS Status;
+  UINT32 DevStatus;
+
+  do {
+    Status = SdSendStatus (Device, Rca, &DevStatus);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((EFI_D_INFO, "Cannot read SD status\n"));
+      return Status;
+    }
+    // Check device status
+    if ((DevStatus & (1 << 8)) && (DevStatus & (0xf << 9)) != (7 << 9)) {
+      break;
+    } else if (DevStatus & ~0x0206BF7F) {
+      DEBUG ((EFI_D_ERROR, "SD Status error\n"));
+      return EFI_DEVICE_ERROR;
+    }
+
+    gBS->Stall (1000);
+  } while (Timeout--);
+
+  if (Timeout <= 0) {
+    DEBUG ((EFI_D_ERROR, "SD Status timeout\n"));
+    return EFI_TIMEOUT;
+  }
+
+  if (DevStatus & (1 << 7)) {
+    DEBUG ((EFI_D_ERROR, "SD switch error\n"));
+    return EFI_DEVICE_ERROR;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/**
   Read/write single block through sync or async I/O request.
 
   @param[in]  Device            A pointer to the SD_DEVICE instance.
@@ -719,6 +770,16 @@ SdReadWrite (
       return Status;
     }
     DEBUG ((EFI_D_INFO, "Sd%a(): Lba 0x%x BlkNo 0x%x Event %p with %r\n", IsRead ? "Read" : "Write", Lba, BlockNum, Token->Event, Status));
+
+    if (FeaturePcdGet(PcdSdForcePioMode)) {
+      if (!IsRead) {
+        if (SdIsReady (Device, Device->Rca, 1000) == EFI_SUCCESS) {
+          Status = EFI_SUCCESS;
+        }
+        else
+          Status = EFI_DEVICE_ERROR;
+      }
+    }
 
     Lba   += BlockNum;
     Buffer = (UINT8*)Buffer + BufferSize;
