@@ -916,12 +916,6 @@ SdCardSetBusMode (
     return Status;
   }
 
-  // Get the supported bus speed from SWITCH cmd return data group #1.
-  //
-  Status = SdCardSwitch (PassThru, Slot, 0xF, 0xF, 0xF, 0xF, FALSE, SwitchResp);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
   //
   // Get the supported bus speed from SWITCH cmd return data group #1.
   //
