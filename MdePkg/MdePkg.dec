@@ -1718,6 +1718,13 @@
   # @Prompt Validate ORDERED_COLLECTION structure
   gEfiMdePkgTokenSpaceGuid.PcdValidateOrderedCollection|FALSE|BOOLEAN|0x0000002a
 
+  ## Indicates if PIO mode should be used for data transfer with SD devices.
+  #  If this flag isn't set, DMA modes will be used.
+  #   TRUE  - PIO mode will be forced for transfer with SD devices. <BR>
+  #   FALSE - PIO mode won't be forced for transfer with SD devices. <BR>
+  # @Prompt Force PIO mode for data transfer with SD devices
+  gEfiMdePkgTokenSpaceGuid.PcdSdForcePioMode|FALSE|BOOLEAN|0x10000029
+
 [PcdsFixedAtBuild]
   ## Status code value for indicating a watchdog timer has expired.
   # EFI_COMPUTING_UNIT_HOST_PROCESSOR | EFI_CU_HP_EC_TIMER_EXPIRED
