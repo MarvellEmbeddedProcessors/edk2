@@ -64,3 +64,5 @@
   ## BY_START
   gEfiDevicePathProtocolGuid
 
+[FeaturePcd]
+  gEfiMdePkgTokenSpaceGuid.PcdSdForcePioMode
