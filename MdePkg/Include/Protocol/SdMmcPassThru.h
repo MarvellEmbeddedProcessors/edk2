@@ -250,6 +250,27 @@ EFI_STATUS
   IN UINT8                                   Slot
 );
 
+/**
+  Checks if this SD controller supports DMA transfer according to capabilities register.
+
+  If controller supports ADMA or SDMA, EFI_SUCCESS is returned.
+
+  If controller does not support ADMA nor SDMA, EFI_UNSUPPORTED is returned.
+
+  @param[in]  This              A pointer to the EFI_SD_MMC_PASS_THRU_PROTOCOL instance.
+  @param[in]  Slot              Specifies the slot, whose DMA-support will be checked.
+
+  @retval EFI_SUCCESS           SD controller supports DMA operations.
+  @retval EFI_UNSUPPORTED       SD controller does not support DMA operations.
+
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EFI_SD_MMC_PASS_THRU_IS_DMA_ENABLED) (
+  IN EFI_SD_MMC_PASS_THRU_PROTOCOL           *This,
+  IN UINT8                                   Slot
+);
+
 struct _EFI_SD_MMC_PASS_THRU_PROTOCOL {
   UINT32                                     IoAlign;
   EFI_SD_MMC_PASS_THRU_PASSTHRU              PassThru;
@@ -257,6 +278,7 @@ struct _EFI_SD_MMC_PASS_THRU_PROTOCOL {
   EFI_SD_MMC_PASS_THRU_BUILD_DEVICE_PATH     BuildDevicePath;
   EFI_SD_MMC_PASS_THRU_GET_SLOT_NUMBER       GetSlotNumber;
   EFI_SD_MMC_PASS_THRU_RESET_DEVICE          ResetDevice;
+  EFI_SD_MMC_PASS_THRU_IS_DMA_ENABLED        IsDmaEnabled;
 };
 
 extern EFI_GUID gEfiSdMmcPassThruProtocolGuid;
