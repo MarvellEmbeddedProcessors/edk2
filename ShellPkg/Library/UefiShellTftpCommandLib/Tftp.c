@@ -894,17 +894,12 @@ DownloadFile (
   TftpContext->DownloadedNbOfBytes   = 0;
   TftpContext->LastReportedNbOfBytes = 0;
 
-  UINT8 name[] = "blksize";
-  UINT8 val[] = "1468";
-  EFI_MTFTP4_OPTION Blksize = { name, val };
   ZeroMem (&Mtftp4Token, sizeof (EFI_MTFTP4_TOKEN));
   Mtftp4Token.Filename    = (UINT8*)AsciiFilePath;
   Mtftp4Token.BufferSize  = FileSize;
   Mtftp4Token.Buffer      = Buffer;
   Mtftp4Token.CheckPacket = CheckPacket;
   Mtftp4Token.Context     = (VOID*)TftpContext;
-  Mtftp4Token.OptionCount = 1;
-  Mtftp4Token.OptionList = &Blksize;
 
   ShellPrintHiiEx (
     -1, -1, NULL, STRING_TOKEN (STR_TFTP_DOWNLOADING),
