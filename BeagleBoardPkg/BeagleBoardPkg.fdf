@@ -167,6 +167,7 @@ FvNameGuid         = d0dd3e90-343d-4cb3-8f69-772214989282
   #
 
   INF Omap35xxPkg/PciEmulation/PciEmulation.inf
+  INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
 
   INF MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
   INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
