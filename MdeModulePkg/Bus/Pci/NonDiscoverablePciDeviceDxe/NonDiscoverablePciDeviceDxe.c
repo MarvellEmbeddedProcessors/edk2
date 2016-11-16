@@ -16,6 +16,8 @@
 
 #include <Protocol/DriverBinding.h>
 
+EFI_CPU_ARCH_PROTOCOL      *mCpu;
+
 //
 // Probe, start and stop functions of this driver, called by the DXE core for
 // specific devices.
@@ -64,13 +66,9 @@ NonDiscoverablePciDeviceSupported (
   case NonDiscoverableDeviceTypeSdhci:
   case NonDiscoverableDeviceTypeUfs:
   case NonDiscoverableDeviceTypeNvme:
-    //
-    // Restricted to DMA coherent for now
-    //
-    if (Device->DmaType == NonDiscoverableDeviceDmaTypeCoherent) {
-      Status = EFI_SUCCESS;
-      break;
-    }
+    Status = EFI_SUCCESS;
+    break;
+
   default:
     Status = EFI_UNSUPPORTED;
     goto CloseProtocol;
@@ -212,6 +210,11 @@ NonDiscoverablePciDeviceDxeEntryPoint (
   IN EFI_SYSTEM_TABLE *SystemTable
   )
 {
+  EFI_STATUS      Status;
+
+  Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&mCpu);
+  ASSERT_EFI_ERROR(Status);
+
   return EfiLibInstallDriverBindingComponentName2 (
            ImageHandle,
            SystemTable,
