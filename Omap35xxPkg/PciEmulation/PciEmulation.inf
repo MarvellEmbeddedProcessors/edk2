@@ -22,33 +22,23 @@
   ENTRY_POINT                     = PciEmulationEntryPoint
 
 [Sources.common]
-  PciRootBridgeIo.c
   PciEmulation.c
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
-  IntelFrameworkPkg/IntelFrameworkPkg.dec
-  ArmPkg/ArmPkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
   Omap35xxPkg/Omap35xxPkg.dec
 
 [LibraryClasses]
   BaseLib
-  DxeServicesTableLib
-  UefiLib
+  DebugLib
+  IoLib
+  NonDiscoverableDeviceRegistrationLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
-  UefiRuntimeServicesTableLib
-  IoLib
-  OmapDmaLib
-  DmaLib
 
 [Protocols]
-  gEfiPciRootBridgeIoProtocolGuid
-  gEfiDevicePathProtocolGuid
-  gEfiPciHostBridgeResourceAllocationProtocolGuid
-  gEfiPciIoProtocolGuid
   gEmbeddedExternalDeviceProtocolGuid
 
 [Depex]
