@@ -1451,19 +1451,11 @@ AhciReset (
 {
   UINT64                 Delay;
   UINT32                 Value;
-  UINT32                 Capability;
 
   //
-  // Collect AHCI controller information
+  // Enable AE before accessing any AHCI registers.
   //
-  Capability = AhciReadReg (PciIo, EFI_AHCI_CAPABILITY_OFFSET);
-  
-  //
-  // Enable AE before accessing any AHCI registers if Supports AHCI Mode Only is not set
-  //
-  if ((Capability & EFI_AHCI_CAP_SAM) == 0) {
-    AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
-  }
+  AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
 
   AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_RESET);
 
@@ -2272,11 +2264,9 @@ AhciModeInitialization (
   Capability = AhciReadReg (PciIo, EFI_AHCI_CAPABILITY_OFFSET);
   
   //
-  // Enable AE before accessing any AHCI registers if Supports AHCI Mode Only is not set
+  // Enable AE before accessing any AHCI registers.
   //
-  if ((Capability & EFI_AHCI_CAP_SAM) == 0) {
-    AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
-  }
+  AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
 
   //
   // Enable 64-bit DMA support in the PCI layer if this controller
