@@ -84,10 +84,10 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Stop(IN  EFI_DRIVER_BINDING_PROTOCOL  *T
                                              IN  UINTN                        NumberOfChildren,
                                              IN  EFI_HANDLE                   *ChildHandleBuffer);
 
-void fsw_efi_change_blocksize(struct fsw_volume *vol,
+void EFIAPI fsw_efi_change_blocksize(struct fsw_volume *vol,
                               fsw_u32 old_phys_blocksize, fsw_u32 old_log_blocksize,
                               fsw_u32 new_phys_blocksize, fsw_u32 new_log_blocksize);
-fsw_status_t fsw_efi_read_block(struct fsw_volume *vol, fsw_u32 phys_bno, void *buffer);
+fsw_status_t EFIAPI fsw_efi_read_block(struct fsw_volume *vol, fsw_u64 phys_bno, void *buffer);
 
 EFI_STATUS fsw_efi_map_status(fsw_status_t fsw_status, FSW_VOLUME_DATA *Volume);
 
@@ -125,6 +125,22 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
                                        OUT VOID *Buffer);
 
 /**
+ * Structure for holding disk cache data.
+ */
+
+#define CACHE_SIZE 131072 /* 128KiB */
+struct cache_data {
+   fsw_u8            *Cache;
+   fsw_u64           CacheStart;
+   BOOLEAN           CacheValid;
+   FSW_VOLUME_DATA   *Volume; // NOTE: Do not deallocate; copied here to ID volume
+};
+
+#define NUM_CACHES 2 /* Don't increase without modifying fsw_efi_read_block() */
+static struct cache_data    Caches[NUM_CACHES];
+static int LastRead = -1;
+
+/**
  * Interface structure for the EFI Driver Binding protocol.
  */
 
@@ -132,132 +148,20 @@ EFI_DRIVER_BINDING_PROTOCOL fsw_efi_DriverBinding_table = {
     fsw_efi_DriverBinding_Supported,
     fsw_efi_DriverBinding_Start,
     fsw_efi_DriverBinding_Stop,
-    0xa,
+    0x10,
     NULL,
     NULL
 };
 
-//forward declaration
-EFI_STATUS
-EFIAPI
-ExtComponentNameGetDriverName (
-  IN  EFI_COMPONENT_NAME_PROTOCOL  *This,
-  IN  CHAR8                        *Language,
-  OUT CHAR16                       **DriverName
-  );
+/**
+ * Interface structure for the EFI Component Name protocol.
+ */
 
-EFI_STATUS
-EFIAPI
-ExtComponentNameGetControllerName (
-  IN  EFI_COMPONENT_NAME_PROTOCOL                     *This,
-  IN  EFI_HANDLE                                      ControllerHandle,
-  IN  EFI_HANDLE                                      ChildHandle        OPTIONAL,
-  IN  CHAR8                                           *Language,
-  OUT CHAR16                                          **ControllerName
-  );
-
-//
-// EFI Component Name Protocol
-//
-GLOBAL_REMOVE_IF_UNREFERENCED EFI_COMPONENT_NAME_PROTOCOL  gExtComponentName = { 
-  ExtComponentNameGetDriverName,
-  ExtComponentNameGetControllerName,
-  "eng"
+REFIND_EFI_COMPONENT_NAME_PROTOCOL fsw_efi_ComponentName_table = {
+    fsw_efi_ComponentName_GetDriverName,
+    fsw_efi_ComponentName_GetControllerName,
+    (CHAR8*) "eng"
 };
-
-//
-// EFI Component Name 2 Protocol
-//
-GLOBAL_REMOVE_IF_UNREFERENCED EFI_COMPONENT_NAME2_PROTOCOL gExtComponentName2 = { 
-  (EFI_COMPONENT_NAME2_GET_DRIVER_NAME) ExtComponentNameGetDriverName,
-  (EFI_COMPONENT_NAME2_GET_CONTROLLER_NAME) ExtComponentNameGetControllerName,
-  "en"
-};
-
-GLOBAL_REMOVE_IF_UNREFERENCED EFI_UNICODE_STRING_TABLE mExtDriverNameTable[] = {
-  {
-    "eng;en",
-    L"Ext File System Driver"
-  },
-  {
-    NULL,
-    NULL
-  }
-};
-
-GLOBAL_REMOVE_IF_UNREFERENCED EFI_UNICODE_STRING_TABLE mExtControllerNameTable[] = {
-  {
-    "eng;en",
-    L"Ext File System"
-  },
-  {
-    NULL,
-    NULL
-  }
-};
-
-EFI_STATUS
-EFIAPI
-ExtComponentNameGetDriverName (
-  IN  EFI_COMPONENT_NAME_PROTOCOL  *This,
-  IN  CHAR8                        *Language,
-  OUT CHAR16                       **DriverName
-  )
-{
-#if DEBUG_LEVEL
-	Print(L" ExtComponentNameGetDriverName called\n");
-#endif
-
-  return LookupUnicodeString2 (
-           Language,
-           This->SupportedLanguages,
-           mExtDriverNameTable,
-           DriverName,
-           (BOOLEAN)(This == &gExtComponentName)
-           );
-}
-
-EFI_STATUS
-EFIAPI
-ExtComponentNameGetControllerName (
-  IN  EFI_COMPONENT_NAME_PROTOCOL                     *This,
-  IN  EFI_HANDLE                                      ControllerHandle,
-  IN  EFI_HANDLE                                      ChildHandle        OPTIONAL,
-  IN  CHAR8                                           *Language,
-  OUT CHAR16                                          **ControllerName
-  )
-{
-  EFI_STATUS  Status;
-#if DEBUG_LEVEL
-	Print(L"ExtComponentNameGetControllerName called\n");
-#endif
-  //
-  // This is a device driver, so ChildHandle must be NULL.
-  //
-  if (ChildHandle != NULL) {
-    return EFI_UNSUPPORTED;
-  }
-
-  //
-  // Make sure this driver is currently managing ControllHandle
-  //
-  Status = EfiTestManagedDevice (
-             ControllerHandle,
-             fsw_efi_DriverBinding_table.DriverBindingHandle,
-             &gEfiDiskIoProtocolGuid
-             );
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-
-  return LookupUnicodeString2 (
-           Language,
-           This->SupportedLanguages,
-           mExtControllerNameTable,
-           ControllerName,
-           (BOOLEAN)(This == &gExtComponentName)
-           );
-}
 
 /**
  * Dispatch table for our FSW host driver.
@@ -265,12 +169,29 @@ ExtComponentNameGetControllerName (
 
 struct fsw_host_table   fsw_efi_host_table = {
     FSW_STRING_TYPE_UTF16,
+
     fsw_efi_change_blocksize,
     fsw_efi_read_block
 };
 
 extern struct fsw_fstype_table   FSW_FSTYPE_TABLE_NAME(FSTYPE);
 
+
+static VOID EFIAPI fsw_efi_clear_cache(VOID) {
+   int i;
+
+   // clear the cache
+   for (i = 0; i < NUM_CACHES; i++) {
+      if (Caches[i].Cache != NULL) {
+         FreePool(Caches[i].Cache);
+         Caches[i].Cache = NULL;
+      } // if
+            Caches[i].CacheStart = 0;
+            Caches[i].CacheValid = FALSE;
+            Caches[i].Volume = NULL;
+   }
+   LastRead = -1;
+} // VOID EFIAPI fsw_efi_clear_cache();
 
 /**
  * Image entry point. Installs the Driver Binding and Component Name protocols
@@ -281,55 +202,48 @@ EFI_STATUS EFIAPI fsw_efi_main(IN EFI_HANDLE         ImageHandle,
                                IN EFI_SYSTEM_TABLE   *SystemTable)
 {
     EFI_STATUS  Status;
-		Status = EfiLibInstallDriverBindingComponentName2 (
-             ImageHandle,
-             SystemTable,
-             &fsw_efi_DriverBinding_table,
-             ImageHandle,
-             &gExtComponentName,
-             &gExtComponentName2
-             );  
-  	ASSERT_EFI_ERROR (Status);
+
+#ifndef __MAKEWITH_TIANO
+    // Not available in EDK2 toolkit
+    InitializeLib(ImageHandle, SystemTable);
+#endif
+
+    // complete Driver Binding protocol instance
+    fsw_efi_DriverBinding_table.ImageHandle          = ImageHandle;
+    fsw_efi_DriverBinding_table.DriverBindingHandle  = ImageHandle;
+    // install Driver Binding protocol
+    Status = refit_call4_wrapper(BS->InstallProtocolInterface, &fsw_efi_DriverBinding_table.DriverBindingHandle,
+                                          &gEfiDriverBindingProtocolGuid,
+                                          EFI_NATIVE_INTERFACE,
+                                          &fsw_efi_DriverBinding_table);
+    if (EFI_ERROR (Status)) {
+        return Status;
+    }
+
+    // install Component Name protocol
+    Status = refit_call4_wrapper(BS->InstallProtocolInterface, &fsw_efi_DriverBinding_table.DriverBindingHandle,
+                                          &gEfiComponentNameProtocolGuid,
+                                          EFI_NATIVE_INTERFACE,
+                                          &fsw_efi_ComponentName_table);
+    if (EFI_ERROR (Status)) {
+        return Status;
+    }
+
+//	OverrideFunctions();
+//   Msg = NULL;
+//   msgCursor = NULL;
+//   Status = BS->LocateProtocol(&gMsgLogProtocolGuid, NULL, (VOID **) &Msg);
+//   if (!EFI_ERROR(Status) && (Msg != NULL)) {
+//     msgCursor = Msg->Cursor;
+//     BootLog("MsgLog installed into VBoxFs\n");
+//   }
+
     return EFI_SUCCESS;
 }
 
 #ifdef __MAKEWITH_GNUEFI
 EFI_DRIVER_ENTRY_POINT(fsw_efi_main)
 #endif
-
-EFI_STATUS
-EFIAPI
-ExtUnload (
-  IN EFI_HANDLE  ImageHandle
-  )
-{
-  EFI_STATUS  Status;
-  EFI_HANDLE  *DeviceHandleBuffer;
-  UINTN       DeviceHandleCount;
-  UINTN       Index;
-
-  Status = gBS->LocateHandleBuffer (
-                  AllHandles,
-                  NULL,
-                  NULL,
-                  &DeviceHandleCount,
-                  &DeviceHandleBuffer
-                  );
-  if (!EFI_ERROR (Status)) {
-    for (Index = 0; Index < DeviceHandleCount; Index++) {
-      Status = gBS->DisconnectController (
-                      DeviceHandleBuffer[Index],
-                      ImageHandle,
-                      NULL
-                      );
-    }
-
-    if (DeviceHandleBuffer != NULL) {
-      FreePool (DeviceHandleBuffer);
-    }
-  }
-  return Status;
-}
 
 /**
  * Driver Binding EFI protocol, Supported function. This function is called by EFI
@@ -346,26 +260,25 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Supported(IN EFI_DRIVER_BINDING_PROTOCOL
     EFI_DISK_IO         *DiskIo;
 
     // we check for both DiskIO and BlockIO protocols
+
     // first, open DiskIO
-    Status = gBS->OpenProtocol (
-										ControllerHandle,
-                    &gEfiDiskIoProtocolGuid,
-                    (VOID **) &DiskIo,
-                    This->DriverBindingHandle,
-                    ControllerHandle,
-                    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
-										);
+    Status = refit_call6_wrapper(BS->OpenProtocol, ControllerHandle,
+                              &gEfiDiskIoProtocolGuid,
+                              (VOID **) &DiskIo,
+                              This->DriverBindingHandle,
+                              ControllerHandle,
+                              EFI_OPEN_PROTOCOL_BY_DRIVER);
     if (EFI_ERROR(Status))
         return Status;
 
     // we were just checking, close it again
-    gBS->CloseProtocol(ControllerHandle,
+    refit_call4_wrapper(BS->CloseProtocol, ControllerHandle,
                       &gEfiDiskIoProtocolGuid,
                       This->DriverBindingHandle,
                       ControllerHandle);
 
     // next, check BlockIO without actually opening it
-    Status = gBS->OpenProtocol(ControllerHandle,
+    Status = refit_call6_wrapper(BS->OpenProtocol, ControllerHandle,
                               &gEfiBlockIoProtocolGuid,
                               NULL,
                               This->DriverBindingHandle,
@@ -401,29 +314,25 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Start(IN EFI_DRIVER_BINDING_PROTOCOL  *T
 #endif
 
     // open consumed protocols
-    Status = gBS->OpenProtocol(ControllerHandle,
-															&gEfiBlockIoProtocolGuid,
+    Status = refit_call6_wrapper(BS->OpenProtocol, ControllerHandle,
+                              &gEfiBlockIoProtocolGuid,
                               (VOID **) &BlockIo,
                               This->DriverBindingHandle,
                               ControllerHandle,
                               EFI_OPEN_PROTOCOL_GET_PROTOCOL);   // NOTE: we only want to look at the MediaId
     if (EFI_ERROR(Status)) {
-#if DEBUG_LEVEL
-        Print(L"Fsw ERROR: OpenProtocol(BlockIo) returned %x\n", Status);
-#endif
+//        Print(L"Fsw ERROR: OpenProtocol(BlockIo) returned %x\n", Status);
         return Status;
     }
 
-    Status = gBS->OpenProtocol( ControllerHandle,
+    Status = refit_call6_wrapper(BS->OpenProtocol, ControllerHandle,
                               &gEfiDiskIoProtocolGuid,
                               (VOID **) &DiskIo,
                               This->DriverBindingHandle,
                               ControllerHandle,
-                              EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+                              EFI_OPEN_PROTOCOL_BY_DRIVER);
     if (EFI_ERROR(Status)) {
-#if DEBUG_LEVEL
-        Print(L"Fsw ERROR: OpenProtocol(DiskIo) returned %r\n", Status);
-#endif
+        Print(L"Fsw ERROR: OpenProtocol(DiskIo) returned %x\n", Status);
         return Status;
     }
 
@@ -441,20 +350,15 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Start(IN EFI_DRIVER_BINDING_PROTOCOL  *T
                                 Volume);
 
     if (!EFI_ERROR(Status)) {
-#if DEBUG_LEVEL
-        Print(L"Fsw success register the SimpleFileSystem protocol %x\n", Status);
-#endif
         // register the SimpleFileSystem protocol
         Volume->FileSystem.Revision     = EFI_FILE_IO_INTERFACE_REVISION;
         Volume->FileSystem.OpenVolume   = fsw_efi_FileSystem_OpenVolume;
-        Status = gBS->InstallMultipleProtocolInterfaces( &ControllerHandle,
+        Status = refit_call4_wrapper(BS->InstallMultipleProtocolInterfaces, &ControllerHandle,
                                                        &gEfiSimpleFileSystemProtocolGuid,
                                                        &Volume->FileSystem,
                                                        NULL);
         if (EFI_ERROR(Status)) {
-#if DEBUG_LEVEL
-            Print(L"Fsw ERROR: InstallMultipleProtocolInterfaces returned %x\n", Status);
-#endif
+//            Print(L"Fsw ERROR: InstallMultipleProtocolInterfaces returned %x\n", Status);
         }
     }
 
@@ -464,14 +368,11 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Start(IN EFI_DRIVER_BINDING_PROTOCOL  *T
             fsw_unmount(Volume->vol);
         FreePool(Volume);
 
-        gBS->CloseProtocol( ControllerHandle,
+        refit_call4_wrapper(BS->CloseProtocol, ControllerHandle,
                           &gEfiDiskIoProtocolGuid,
                           This->DriverBindingHandle,
                           ControllerHandle);
     }
-#if DEBUG_LEVEL
-		Print(L"fsw_efi_DriverBinding_Start returned %x\n", Status);	
-#endif
     return Status;
 }
 
@@ -499,27 +400,24 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Stop(IN  EFI_DRIVER_BINDING_PROTOCOL  *T
 #endif
 
     // get the installed SimpleFileSystem interface
-    Status = gBS->OpenProtocol( ControllerHandle,
+    Status = refit_call6_wrapper(BS->OpenProtocol, ControllerHandle,
                               &gEfiSimpleFileSystemProtocolGuid,
                               (VOID **) &FileSystem,
                               This->DriverBindingHandle,
                               ControllerHandle,
                               EFI_OPEN_PROTOCOL_GET_PROTOCOL);
-    if (EFI_ERROR(Status)){
+    if (EFI_ERROR(Status))
         return EFI_UNSUPPORTED;
-		}
 
     // get private data structure
     Volume = FSW_VOLUME_FROM_FILE_SYSTEM(FileSystem);
 
     // uninstall Simple File System protocol
-    Status = gBS->UninstallMultipleProtocolInterfaces( ControllerHandle,
+    Status = refit_call4_wrapper(BS->UninstallMultipleProtocolInterfaces, ControllerHandle,
                                                      &gEfiSimpleFileSystemProtocolGuid, &Volume->FileSystem,
                                                      NULL);
     if (EFI_ERROR(Status)) {
-#if DEBUG_LEVEL
-        Print(L"Fsw ERROR: UninstallMultipleProtocolInterfaces returned %x\n", Status);
-#endif
+ //       Print(L"Fsw ERROR: UninstallMultipleProtocolInterfaces returned %x\n", Status);
         return Status;
     }
 #if DEBUG_LEVEL
@@ -532,12 +430,49 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Stop(IN  EFI_DRIVER_BINDING_PROTOCOL  *T
     FreePool(Volume);
 
     // close the consumed protocols
-    Status = gBS->CloseProtocol( ControllerHandle,
+    Status = refit_call4_wrapper(BS->CloseProtocol, ControllerHandle,
                                &gEfiDiskIoProtocolGuid,
                                This->DriverBindingHandle,
                                ControllerHandle);
 
+    // clear the cache
+    fsw_efi_clear_cache();
+
     return Status;
+}
+
+/**
+ * Component Name EFI protocol, GetDriverName function. Used by the EFI
+ * environment to inquire the name of this driver. The name returned is
+ * based on the file system type actually used in compilation.
+ */
+
+EFI_STATUS EFIAPI fsw_efi_ComponentName_GetDriverName(IN  REFIND_EFI_COMPONENT_NAME_PROTOCOL  *This,
+                                                      IN  CHAR8                        *Language,
+                                                      OUT CHAR16                       **DriverName)
+{
+    if (Language == NULL || DriverName == NULL)
+        return EFI_INVALID_PARAMETER;
+
+    if (Language[0] == 'e' && Language[1] == 'n' && Language[2] == 'g' && Language[3] == 0) {
+        *DriverName = FSW_EFI_DRIVER_NAME(FSTYPE);
+        return EFI_SUCCESS;
+    }
+    return EFI_UNSUPPORTED;
+}
+
+/**
+ * Component Name EFI protocol, GetControllerName function. Not implemented
+ * because this is not a "bus" driver in the sense of the EFI Driver Model.
+ */
+
+EFI_STATUS EFIAPI fsw_efi_ComponentName_GetControllerName(IN  REFIND_EFI_COMPONENT_NAME_PROTOCOL    *This,
+                                                          IN  EFI_HANDLE                     ControllerHandle,
+                                                          IN  EFI_HANDLE                     ChildHandle  OPTIONAL,
+                                                          IN  CHAR8                          *Language,
+                                                          OUT CHAR16                         **ControllerName)
+{
+    return EFI_UNSUPPORTED;
 }
 
 /**
@@ -545,7 +480,7 @@ EFI_STATUS EFIAPI fsw_efi_DriverBinding_Stop(IN  EFI_DRIVER_BINDING_PROTOCOL  *T
  * when the file system driver changes the block sizes for the volume.
  */
 
-void fsw_efi_change_blocksize(struct fsw_volume *vol,
+void EFIAPI fsw_efi_change_blocksize(struct fsw_volume *vol,
                               fsw_u32 old_phys_blocksize, fsw_u32 old_log_blocksize,
                               fsw_u32 new_phys_blocksize, fsw_u32 new_log_blocksize)
 {
@@ -555,25 +490,91 @@ void fsw_efi_change_blocksize(struct fsw_volume *vol,
 /**
  * FSW interface function to read data blocks. This function is called by the FSW core
  * to read a block of data from the device. The buffer is allocated by the core code.
+ * Two caches are maintained, so as to improve performance on some systems. (VirtualBox
+ * is particularly susceptible to performance problems with an uncached driver -- the
+ * ext2 driver can take 200 seconds to load a Linux kernel under VirtualBox, whereas
+ * the time is more like 3 seconds with a cache!) Two independent caches are maintained
+ * because the ext2fs driver tends to alternate between accessing two parts of the
+ * disk.
  */
 
-fsw_status_t fsw_efi_read_block(struct fsw_volume *vol, fsw_u32 phys_bno, void *buffer)
-{
-    EFI_STATUS          Status;
-    FSW_VOLUME_DATA     *Volume = (FSW_VOLUME_DATA *)vol->host_data;
+fsw_status_t EFIAPI fsw_efi_read_block(struct fsw_volume *vol, fsw_u64 phys_bno, void *buffer) {
+   int              i, ReadCache = -1;
+   FSW_VOLUME_DATA  *Volume = (FSW_VOLUME_DATA *)vol->host_data;
+   EFI_STATUS       Status = EFI_SUCCESS;
+   BOOLEAN          ReadOneBlock = FALSE;
+   UINT64           StartRead = (UINT64) phys_bno * (UINT64) vol->phys_blocksize;
 
-//    FSW_MSG_DEBUGV((FSW_MSGSTR("fsw_efi_read_block: %d  (%d)\n"), phys_bno, vol->phys_blocksize));
+   if (buffer == NULL)
+      return (fsw_status_t) EFI_BAD_BUFFER_SIZE;
 
-    // read from disk
-    Status = Volume->DiskIo->ReadDisk( Volume->DiskIo, Volume->MediaId,
-                                      (UINT64)phys_bno * vol->phys_blocksize,
-                                      vol->phys_blocksize,
-                                      buffer);
-    Volume->LastIOStatus = Status;
-    if (EFI_ERROR(Status))
-        return FSW_IO_ERROR;
-    return FSW_SUCCESS;
-}
+   // Initialize static data structures, if necessary....
+   if (LastRead < 0) {
+      fsw_efi_clear_cache();
+   } // if
+
+   // Look for a cache hit on the current query....
+   i = 0;
+   do {
+      if ((Caches[i].Volume == Volume) &&
+          (Caches[i].CacheValid == TRUE) &&
+          (StartRead >= Caches[i].CacheStart) &&
+          ((StartRead + vol->phys_blocksize) <= (Caches[i].CacheStart + CACHE_SIZE))) {
+         ReadCache = i;
+      }
+      i++;
+   } while ((i < NUM_CACHES) && (ReadCache < 0));
+
+   // No cache hit found; load new cache and pass it on....
+   if (ReadCache < 0) {
+      if (LastRead == -1)
+         LastRead = 1;
+      ReadCache = 1 - LastRead; // NOTE: If NUM_CACHES > 2, this must become more complex
+      Caches[ReadCache].CacheValid = FALSE;
+      if (Caches[ReadCache].Cache == NULL)
+         Caches[ReadCache].Cache = AllocatePool(CACHE_SIZE);
+      if (Caches[ReadCache].Cache != NULL) {
+         // TODO: Below call hangs on my 32-bit Mac Mini when compiled with GNU-EFI.
+         // The same binary is fine under VirtualBox, and the same call is fine when
+         // compiled with Tianocore. Further clue: Omitting "Status =" avoids the
+         // hang but produces a failure to mount the filesystem, even when the same
+         // change is made to later similar call. Calling Volume->DiskIo->ReadDisk()
+         // directly (without refit_call5_wrapper()) changes nothing. Placing Print()
+         // statements at the start and end of the function, and before and after the
+         // ReadDisk() call, suggests that when it fails, the program is executing
+         // code starting mid-function, so there seems to be something messed up in
+         // the way the function is being called. FIGURE THIS OUT!
+         Status = refit_call5_wrapper(Volume->DiskIo->ReadDisk, Volume->DiskIo, Volume->MediaId,
+                                      StartRead, (UINTN) CACHE_SIZE, (VOID*) Caches[ReadCache].Cache);
+         if (!EFI_ERROR(Status)) {
+            Caches[ReadCache].CacheStart = StartRead;
+            Caches[ReadCache].CacheValid = TRUE;
+            Caches[ReadCache].Volume = Volume;
+            LastRead = ReadCache;
+         } else {
+            ReadOneBlock = TRUE;
+         }
+      } else {
+         ReadOneBlock = TRUE;
+      } // if cache memory allocated
+   } // if (ReadCache < 0)
+
+   if (Caches[ReadCache].Cache != NULL && Caches[ReadCache].CacheValid == TRUE && vol->phys_blocksize > 0) {
+      CopyMem(buffer, &Caches[ReadCache].Cache[StartRead - Caches[ReadCache].CacheStart], vol->phys_blocksize);
+   } else {
+      ReadOneBlock = TRUE;
+   }
+
+   if (ReadOneBlock) { // Something's failed, so try a simple disk read of one block....
+      Status = refit_call5_wrapper(Volume->DiskIo->ReadDisk, Volume->DiskIo, Volume->MediaId,
+                                   phys_bno * vol->phys_blocksize,
+                                   (UINTN) vol->phys_blocksize,
+                                   (VOID*) buffer);
+   }
+   Volume->LastIOStatus = Status;
+
+   return Status;
+} // fsw_status_t *fsw_efi_read_block()
 
 /**
  * Map FSW status codes to EFI status codes. The FSW_IO_ERROR code is only produced
@@ -618,6 +619,7 @@ EFI_STATUS EFIAPI fsw_efi_FileSystem_OpenVolume(IN EFI_FILE_IO_INTERFACE *This,
     Print(L"fsw_efi_FileSystem_OpenVolume\n");
 #endif
 
+    fsw_efi_clear_cache();
     Status = fsw_efi_dnode_to_FileHandle(Volume->vol->root, Root);
 
     return Status;
@@ -670,7 +672,7 @@ EFI_STATUS EFIAPI fsw_efi_FileHandle_Delete(IN EFI_FILE *This)
 {
     EFI_STATUS          Status;
 
-    Status = This->Close( This);
+    Status = refit_call1_wrapper(This->Close, This);
     if (Status == EFI_SUCCESS) {
         // this driver is read-only
         Status = EFI_WARN_DELETE_FAILURE;
@@ -801,9 +803,8 @@ EFI_STATUS fsw_efi_dnode_to_FileHandle(IN struct fsw_dnode *dno,
         return Status;
 
     // check type
-    if (dno->type != FSW_DNODE_TYPE_FILE && dno->type != FSW_DNODE_TYPE_DIR){
+    if (dno->type != FSW_DNODE_TYPE_FILE && dno->type != FSW_DNODE_TYPE_DIR)
         return EFI_UNSUPPORTED;
-		}
 
     // allocate file structure
     File = AllocateZeroPool(sizeof(FSW_FILE_DATA));
@@ -1077,7 +1078,7 @@ EFI_STATUS fsw_efi_dnode_getinfo(IN FSW_FILE_DATA *File,
  * appropriate member of the EFI_FILE_INFO structure that we're filling.
  */
 
-static void fsw_efi_store_time_posix(struct fsw_dnode_stat *sb, int which, fsw_u32 posix_time)
+void fsw_store_time_posix(struct fsw_dnode_stat *sb, int which, fsw_u32 posix_time)
 {
     EFI_FILE_INFO       *FileInfo = (EFI_FILE_INFO *)sb->host_data;
 
@@ -1095,12 +1096,19 @@ static void fsw_efi_store_time_posix(struct fsw_dnode_stat *sb, int which, fsw_u
  * adjustments to the EFI_FILE_INFO structure that we're filling.
  */
 
-static void fsw_efi_store_attr_posix(struct fsw_dnode_stat *sb, fsw_u16 posix_mode)
+void fsw_store_attr_posix(struct fsw_dnode_stat *sb, fsw_u16 posix_mode)
 {
     EFI_FILE_INFO       *FileInfo = (EFI_FILE_INFO *)sb->host_data;
 
     if ((posix_mode & S_IWUSR) == 0)
         FileInfo->Attribute |= EFI_FILE_READ_ONLY;
+}
+
+void fsw_store_attr_efi(struct fsw_dnode_stat *sb, fsw_u16 attr)
+{
+    EFI_FILE_INFO       *FileInfo = (EFI_FILE_INFO *)sb->host_data;
+
+    FileInfo->Attribute |= attr;
 }
 
 /**
@@ -1148,8 +1156,6 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
 
     // get the missing info from the fs driver
     ZeroMem(&sb, sizeof(struct fsw_dnode_stat));
-    sb.store_time_posix = fsw_efi_store_time_posix;
-    sb.store_attr_posix = fsw_efi_store_attr_posix;
     sb.host_data = FileInfo;
     Status = fsw_efi_map_status(fsw_dnode_stat(dno, &sb), Volume);
     if (EFI_ERROR(Status))
