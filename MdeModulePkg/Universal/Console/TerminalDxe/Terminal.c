@@ -485,7 +485,7 @@ TerminalDriverBindingStart (
                   (VOID **) &ParentDevicePath,
                   This->DriverBindingHandle,
                   Controller,
-                  EFI_OPEN_PROTOCOL_BY_DRIVER
+                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
                   );
   ASSERT ((Status == EFI_SUCCESS) || (Status == EFI_ALREADY_STARTED));
   if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
