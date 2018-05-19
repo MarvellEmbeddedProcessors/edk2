@@ -552,11 +552,6 @@ BuildFvHob (
 {
   EFI_HOB_FIRMWARE_VOLUME  *Hob;
 
-  if (!InternalCheckFvAlignment (BaseAddress, Length)) {
-    ASSERT (FALSE);
-    return;
-  }
-
   Hob = InternalPeiCreateHob (EFI_HOB_TYPE_FV, (UINT16) sizeof (EFI_HOB_FIRMWARE_VOLUME));
   if (Hob == NULL) {
     return;
