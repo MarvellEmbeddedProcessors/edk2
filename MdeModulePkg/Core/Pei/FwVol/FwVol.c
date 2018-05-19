@@ -1589,10 +1589,6 @@ PeiFfsFvPpiProcessVolume (
   
   ASSERT (FvHandle != NULL);
   
-  if (Buffer == NULL) {
-    return EFI_VOLUME_CORRUPTED;
-  }
-  
   //
   // The build-in EFI_PEI_FIRMWARE_VOLUME_PPI for FFS2/FFS3 support memory-mapped
   // FV image and the handle is pointed to Fv image's buffer.
@@ -1879,7 +1875,7 @@ PeiFfsFvPpiGetVolumeInfo (
   EFI_FIRMWARE_VOLUME_HEADER             FwVolHeader;
   EFI_FIRMWARE_VOLUME_EXT_HEADER         *FwVolExHeaderInfo;
 
-  if ((VolumeInfo == NULL) || (FvHandle == NULL)) {
+  if ((VolumeInfo == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
   
