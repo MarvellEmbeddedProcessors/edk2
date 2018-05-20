@@ -258,6 +258,8 @@ EndOfPeiSignalPpiNotifyCallback (
   Status = PeiServicesGetBootMode(&BootMode);
   ASSERT_EFI_ERROR (Status);
 
+  return EFI_SUCCESS;
+
   //
   // Don't need to report it on S3 boot.
   //
